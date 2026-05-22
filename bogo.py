@@ -1,5 +1,8 @@
 import asyncio
+import csv
 import html
+from datetime import datetime
+from pathlib import Path
 from playwright.async_api import async_playwright
 
 BOGO_URL = "https://www.publix.com/savings/weekly-ad/bogo"
@@ -7,6 +10,25 @@ BOGO_URL = "https://www.publix.com/savings/weekly-ad/bogo"
 # These keywords identify true "buy X get Y free" deals in the API response.
 # The WeeklyAd endpoint mixes all deal types together, so we filter here.
 BOGO_KEYWORDS = ("buy 1 get 1", "buy one get one", "bogo", "get one free", "get 1 free", "buy 2 get 1")
+
+# Items to mark as favorites — matched case-insensitively against the item title
+FAVORITES = (
+    "Fresh Express Salad Blends",
+    "Tomato Medley",
+    "Sabra Hummus",
+    "Cabot Cheese Bar",
+    "Nutty & Fruity Mango",
+    "Calbee Harvest Snaps Snacks",
+    "Pretzilla Soft Pretzel Bites",
+    "12-Pack Landshark Island Style Lager",
+    "6-Pack Shock Top",
+)
+
+
+def is_favorite(title: str) -> bool:
+    """Return True if the item title matches any entry in FAVORITES."""
+    title_lower = title.lower()
+    return any(fav.lower() in title_lower for fav in FAVORITES)
 
 
 def is_bogo(item: dict) -> bool:
@@ -102,14 +124,39 @@ async def fetch_bogo_items():
             seen.add(key)
             unique_bogo.append(item)
 
-    print(f"\nFound {len(unique_bogo)} BOGO deal(s) (from {len(all_savings)} total weekly ad items):\n")
-    print(f"{'#':<4} {'Deal':<20} {'Item'}")
-    print("-" * 90)
+    # Sort: favorites first, then alphabetically by department
+    unique_bogo.sort(key=lambda x: (
+        not is_favorite(clean(x.get("title", ""))),
+        clean(x.get("department", "")).lower()
+    ))
 
-    for i, item in enumerate(unique_bogo, 1):
-        deal = clean(item.get("savings", ""))
+    print(f"\nFound {len(unique_bogo)} BOGO deal(s) (from {len(all_savings)} total weekly ad items):\n")
+    print(f"{'Item':<45} {'Department':<25} {'Fav':<5} {'Save Up To':<12} {'Valid'}")
+    print("-" * 105)
+
+    for item in unique_bogo:
         title = clean(item.get("title", "Unknown"))
-        print(f"{i:<4} {deal:<20} {title}")
+        save_up_to = clean(item.get("additionalDealInfo", "")).replace("SAVE UP TO ", "").replace("Save Up To ", "")
+        valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
+        fav = "★" if is_favorite(title) else ""
+        department = clean(item.get("department", ""))
+        print(f"{title:<45} {department:<25} {fav:<5} {save_up_to:<12} {valid}")
+
+    # Save results to a CSV in the repo's downloads folder
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_path = Path(__file__).parent / "downloads" / f"publix_bogo_{timestamp}.csv"
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
+        # QUOTE_ALL ensures every field is quoted, so spreadsheet apps parse columns correctly
+        writer = csv.writer(f, quoting=csv.QUOTE_ALL)
+        writer.writerow(["Item", "Department", "Favorite", "Save Up To", "Valid"])
+        for item in unique_bogo:
+            title = clean(item.get("title", "Unknown"))
+            save_up_to = clean(item.get("additionalDealInfo", "")).replace("SAVE UP TO ", "").replace("Save Up To ", "")
+            valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
+            department = clean(item.get("department", ""))
+            writer.writerow([title, department, "Yes" if is_favorite(title) else "", save_up_to, valid])
+
+    print(f"\nSaved to {output_path}")
 
 
 if __name__ == "__main__":
