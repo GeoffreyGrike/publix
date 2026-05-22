@@ -1,6 +1,6 @@
 # Publix BOGO Scraper
 
-Fetches the current week's Buy One Get One (BOGO) deals from the Publix weekly ad and saves them to a CSV file.
+Fetches the current week's Buy One Get One (BOGO) deals from the Publix weekly ad, saves them to a CSV file, and automatically adds new favorite items to an AnyList grocery list.
 
 ---
 
@@ -14,8 +14,9 @@ Each time the script runs it:
 4. Filters that list down to true BOGO deals (Buy 1 Get 1 Free, Buy 2 Get 1 Free, etc.)
 5. Removes duplicates and sorts results — favorites first (alphabetically by department), then the rest (alphabetically by department)
 6. Compares results against the most recent previous CSV to identify new items
-7. Prints the results to the terminal
-8. Saves a timestamped CSV file to the `downloads/` folder
+7. Automatically adds any new favorite items to an AnyList grocery list with a BOGO note
+8. Prints the results to the terminal
+9. Saves a timestamped CSV file to the `downloads/` folder
 
 ---
 
@@ -63,10 +64,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 2. Install dependencies
-pip install playwright
+pip install playwright pyanylist python-dotenv
 
 # 3. Install the Chromium browser
 playwright install chromium
+
+# 4. Create your .env file (see AnyList Integration below)
+cp .env.example .env
 ```
 
 ---
@@ -94,6 +98,34 @@ FAVORITES = (
 ```
 
 Matching is case-insensitive and partial — `"Shock Top"` will match `"6-Pack Shock Top Beer"`.
+
+---
+
+## AnyList Integration
+
+When a new favorite BOGO item appears (i.e. it wasn't in the previous run's CSV), the script automatically adds it to your AnyList grocery list. Each item includes a note with the savings amount and valid dates so it's easy to identify as a BOGO deal:
+
+```
+Fresh Express Salad Blends
+BOGO – $5.65 | Valid 5/21 - 5/27
+```
+
+### Setup
+
+Copy `.env.example` to `.env` and fill in your credentials:
+
+```
+ANYLIST_EMAIL=your@email.com
+ANYLIST_PASSWORD=yourpassword
+ANYLIST_LIST_NAME=Groceries
+```
+
+- `ANYLIST_EMAIL` / `ANYLIST_PASSWORD` — your AnyList login credentials
+- `ANYLIST_LIST_NAME` — the name of the list to add items to (must already exist in AnyList)
+
+The `.env` file is excluded from git so your credentials are never committed.
+
+If credentials are not set, the script skips the AnyList sync and prints a reminder.
 
 ---
 
