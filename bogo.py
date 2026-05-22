@@ -50,9 +50,9 @@ async def fetch_bogo_items():
     all_savings = []
 
     async with async_playwright() as p:
-        # headless=False: run a visible browser so Akamai bot-detection passes
+        # headless=True: run without a visible browser window
         browser = await p.chromium.launch(
-            headless=False,
+            headless=True,
             args=["--disable-blink-features=AutomationControlled"],
         )
         context = await browser.new_context(
