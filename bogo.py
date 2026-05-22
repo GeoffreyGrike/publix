@@ -124,6 +124,17 @@ async def fetch_bogo_items():
             seen.add(key)
             unique_bogo.append(item)
 
+    # Load previous run's items to detect what's new this week
+    downloads_dir = Path(__file__).parent / "downloads"
+    previous_items = set()
+    previous_files = sorted(downloads_dir.glob("publix_bogo_*.csv"))
+    if previous_files:
+        with open(previous_files[-1], newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                previous_items.add(row.get("Item", "").strip())
+        print(f"Comparing against previous run: {previous_files[-1].name}")
+
     # Sort: favorites first, then alphabetically by department
     unique_bogo.sort(key=lambda x: (
         not is_favorite(clean(x.get("title", ""))),
@@ -131,8 +142,8 @@ async def fetch_bogo_items():
     ))
 
     print(f"\nFound {len(unique_bogo)} BOGO deal(s) (from {len(all_savings)} total weekly ad items):\n")
-    print(f"{'Item':<45} {'Department':<25} {'Fav':<5} {'Save Up To':<12} {'Valid'}")
-    print("-" * 105)
+    print(f"{'Item':<45} {'Department':<25} {'Fav':<5} {'New':<5} {'Save Up To':<12} {'Valid'}")
+    print("-" * 115)
 
     for item in unique_bogo:
         title = clean(item.get("title", "Unknown"))
@@ -140,21 +151,24 @@ async def fetch_bogo_items():
         valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
         fav = "★" if is_favorite(title) else ""
         department = clean(item.get("department", ""))
-        print(f"{title:<45} {department:<25} {fav:<5} {save_up_to:<12} {valid}")
+        # Mark as new if no previous file existed or item wasn't in previous run
+        new = "🆕" if previous_items and title not in previous_items else ""
+        print(f"{title:<45} {department:<25} {fav:<5} {new:<5} {save_up_to:<12} {valid}")
 
     # Save results to a CSV in the repo's downloads folder
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_path = Path(__file__).parent / "downloads" / f"publix_bogo_{timestamp}.csv"
+    output_path = downloads_dir / f"publix_bogo_{timestamp}.csv"
     with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         # QUOTE_ALL ensures every field is quoted, so spreadsheet apps parse columns correctly
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-        writer.writerow(["Item", "Department", "Favorite", "Save Up To", "Valid"])
+        writer.writerow(["Item", "Department", "Favorite", "New", "Save Up To", "Valid"])
         for item in unique_bogo:
             title = clean(item.get("title", "Unknown"))
             save_up_to = clean(item.get("additionalDealInfo", "")).replace("SAVE UP TO ", "").replace("Save Up To ", "")
             valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
             department = clean(item.get("department", ""))
-            writer.writerow([title, department, "Yes" if is_favorite(title) else "", save_up_to, valid])
+            new = "Yes" if previous_items and title not in previous_items else ""
+            writer.writerow([title, department, "Yes" if is_favorite(title) else "", new, save_up_to, valid])
 
     print(f"\nSaved to {output_path}")
 
