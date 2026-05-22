@@ -1,9 +1,15 @@
 import asyncio
 import csv
 import html
+import os
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
 from playwright.async_api import async_playwright
+from pyanylist import AnyListClient
+
+load_dotenv()  # loads ANYLIST_EMAIL, ANYLIST_PASSWORD, ANYLIST_LIST_NAME from .env
 
 BOGO_URL = "https://www.publix.com/savings/weekly-ad/bogo"
 
@@ -171,6 +177,60 @@ async def fetch_bogo_items():
             writer.writerow([title, department, "Yes" if is_favorite(title) else "", new, save_up_to, valid])
 
     print(f"\nSaved to {output_path}")
+
+    # Add new favorite BOGO items to AnyList automatically
+    await sync_favorites_to_anylist(unique_bogo, previous_items)
+
+
+async def sync_favorites_to_anylist(items: list, previous_items: set):
+    """Add new favorite BOGO items to AnyList.
+
+    Only adds items that are both a favorite AND new this week (not in the
+    previous run), so the list isn't flooded with duplicates on every run.
+    On the very first run (no previous file), all current favorites are added.
+    """
+    email = os.getenv("ANYLIST_EMAIL")
+    password = os.getenv("ANYLIST_PASSWORD")
+    list_name = os.getenv("ANYLIST_LIST_NAME", "Publix BOGO")
+
+    if not email or not password:
+        print("\nAnyList credentials not set — skipping AnyList sync.")
+        print("Add ANYLIST_EMAIL and ANYLIST_PASSWORD to .env to enable.")
+        return
+
+    # Collect favorites that are new this week
+    to_add = [
+        clean(item.get("title", ""))
+        for item in items
+        if is_favorite(clean(item.get("title", "")))
+        and (not previous_items or clean(item.get("title", "")) not in previous_items)
+    ]
+
+    if not to_add:
+        print("\nNo new favorite BOGO items to add to AnyList.")
+        return
+
+    print(f"\nSyncing {len(to_add)} new favorite(s) to AnyList list '{list_name}'...")
+    try:
+        client = AnyListClient.login(email, password)
+        grocery_list = client.get_list_by_name(list_name)
+
+        if grocery_list is None:
+            grocery_list = client.create_list(list_name)
+            print(f"  Created new AnyList list: '{list_name}'")
+
+        # Get names already on the list to avoid duplicates
+        existing = {item.name.lower() for item in grocery_list.items}
+
+        for title in to_add:
+            if title.lower() in existing:
+                print(f"  Skipped (already on list): {title}")
+            else:
+                client.add_item(grocery_list.id, title)
+                print(f"  Added: {title}")
+
+    except Exception as e:
+        print(f"  AnyList sync failed: {e}")
 
 
 if __name__ == "__main__":
