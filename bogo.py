@@ -191,17 +191,16 @@ async def sync_favorites_to_anylist(items: list, previous_items: set):
     """
     email = os.getenv("ANYLIST_EMAIL")
     password = os.getenv("ANYLIST_PASSWORD")
-    list_name = os.getenv("ANYLIST_LIST_NAME", "Publix BOGO")
+    list_name = os.getenv("ANYLIST_LIST_NAME", "Groceries")
 
     if not email or not password:
         print("\nAnyList credentials not set — skipping AnyList sync.")
         print("Add ANYLIST_EMAIL and ANYLIST_PASSWORD to .env to enable.")
         return
 
-    # Collect favorites that are new this week
+    # Collect favorites that are new this week, keeping the full item dict for details
     to_add = [
-        clean(item.get("title", ""))
-        for item in items
+        item for item in items
         if is_favorite(clean(item.get("title", "")))
         and (not previous_items or clean(item.get("title", "")) not in previous_items)
     ]
@@ -220,14 +219,20 @@ async def sync_favorites_to_anylist(items: list, previous_items: set):
             print(f"  Created new AnyList list: '{list_name}'")
 
         # Get names already on the list to avoid duplicates
-        existing = {item.name.lower() for item in grocery_list.items}
+        existing = {i.name.lower() for i in grocery_list.items}
 
-        for title in to_add:
+        for item in to_add:
+            title = clean(item.get("title", ""))
+            save_up_to = clean(item.get("additionalDealInfo", "")).replace("SAVE UP TO ", "").replace("Save Up To ", "")
+            valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
+            # Note added to the item so it's clearly identifiable as a BOGO in the grocery list
+            note = f"BOGO – {save_up_to} | Valid {valid}"
+
             if title.lower() in existing:
                 print(f"  Skipped (already on list): {title}")
             else:
-                client.add_item(grocery_list.id, title)
-                print(f"  Added: {title}")
+                client.add_item_with_details(grocery_list.id, title, details=note)
+                print(f"  Added: {title} ({note})")
 
     except Exception as e:
         print(f"  AnyList sync failed: {e}")
