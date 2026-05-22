@@ -13,8 +13,9 @@ Each time the script runs it:
 3. Captures the API response that the page fetches in the background — this includes all 730+ weekly ad items for the configured store
 4. Filters that list down to true BOGO deals (Buy 1 Get 1 Free, Buy 2 Get 1 Free, etc.)
 5. Removes duplicates and sorts results — favorites first (alphabetically by department), then the rest (alphabetically by department)
-6. Prints the results to the terminal
-7. Saves a timestamped CSV file to the `downloads/` folder
+6. Compares results against the most recent previous CSV to identify new items
+7. Prints the results to the terminal
+8. Saves a timestamped CSV file to the `downloads/` folder
 
 ---
 
@@ -44,6 +45,7 @@ Saved to `downloads/publix_bogo_YYYY-MM-DD_HH-MM-SS.csv` with columns:
 | Item | Product name |
 | Department | Store section (e.g. Produce, Meat, Deli) |
 | Favorite | "Yes" if the item is in your favorites list |
+| New | "Yes" if the item was not present in the previous run's CSV |
 | Save Up To | Maximum savings amount |
 | Valid | Deal date range (e.g. 5/21 - 5/27) |
 
@@ -92,3 +94,21 @@ FAVORITES = (
 ```
 
 Matching is case-insensitive and partial — `"Shock Top"` will match `"6-Pack Shock Top Beer"`.
+
+---
+
+## Schedule
+
+The script runs automatically every day at **9:00 AM ET** via a cron job installed on this machine:
+
+```
+0 9 * * * cd /path/to/publix && .venv/bin/python3 bogo.py >> downloads/bogo.log 2>&1
+```
+
+Each run compares its results against the most recent CSV in `downloads/`. Any item that wasn't in the previous run is marked **New = Yes**, making it easy to spot deals that just started. Logs from each run are appended to `downloads/bogo.log`.
+
+To view or edit the cron schedule:
+
+```bash
+crontab -e
+```
