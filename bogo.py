@@ -1,86 +1,116 @@
-import html      # standard library: converts HTML entities like &amp; → &
-import requests  # third-party: makes HTTP requests (like a browser fetching a URL)
+import asyncio
+import html
+from playwright.async_api import async_playwright
 
-# The Publix internal API endpoint that powers the weekly ad savings page.
-# Query parameters:
-#   smImg / enImg      - image sizes to return (we don't use images, but required)
-#   page / pageSize    - pagination; pageSize=0 returns all items at once
-#   getSavingType=BOGO - filters the response to the BOGO/coupons section
-API_URL = (
-    "https://services.publix.com/api/v4/savings"
-    "?smImg=235&enImg=368&fallbackImg=false&isMobile=false"
-    "&page=1&pageSize=0&includePersonalizedDeals=false"
-    "&languageID=1&isWeb=true&getSavingType=BOGO"
-)
+BOGO_URL = "https://www.publix.com/savings/weekly-ad/bogo"
 
-# HTTP headers sent with the request so the Publix server treats us like a browser.
-#   User-Agent - identifies the "browser" making the request
-#   Referer    - tells the server which page we're "coming from"
-#   Accept     - tells the server we want JSON back, not HTML
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://www.publix.com/savings/weekly-ad/bogo",
-    "Accept": "application/json",
-}
-
-# The API returns ALL savings types (coupons, spend-and-save, etc.) mixed in together.
-# These keywords help us identify the true "buy X get Y free" deals.
-BOGO_KEYWORDS = ("buy 1 get 1", "buy one get one", "bogo", "get one free", "get 1 free")
+# These keywords identify true "buy X get Y free" deals in the API response.
+# The WeeklyAd endpoint mixes all deal types together, so we filter here.
+BOGO_KEYWORDS = ("buy 1 get 1", "buy one get one", "bogo", "get one free", "get 1 free", "buy 2 get 1")
 
 
 def is_bogo(item: dict) -> bool:
-    """Return True if any BOGO keyword appears anywhere in the item's text fields."""
-    # Combine all text fields into one lowercase string so we only need one search pass
+    """Return True if the item is a true BOGO deal."""
     combined = " ".join([
-        (item.get("savings") or ""),      # e.g. "Buy 1 Get 1 Free"
-        (item.get("title") or ""),        # e.g. "Coca-Cola 20oz"
-        (item.get("description") or ""),  # longer deal description
+        (item.get("savings") or ""),
+        (item.get("title") or ""),
+        (item.get("description") or ""),
     ]).lower()
     return any(kw in combined for kw in BOGO_KEYWORDS)
 
 
 def clean(text: str) -> str:
-    """Decode HTML entities and strip whitespace from a string.
-
-    The API returns raw HTML in some fields, e.g. "Alani Nu&reg;" instead of "Alani Nu®".
-    html.unescape() converts those back to readable characters.
-    """
+    """Decode HTML entities (e.g. &reg; → ®) and strip whitespace."""
     return html.unescape(text or "").strip()
 
 
-def main():
-    print("Fetching Publix BOGO deals...")
+async def fetch_bogo_items():
+    all_savings = []
 
-    # Make the GET request; raise_for_status() will throw an error if the
-    # server returns anything other than a 200 OK (e.g. 404, 500)
-    resp = requests.get(API_URL, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
+    async with async_playwright() as p:
+        # headless=False: run a visible browser so Akamai bot-detection passes
+        browser = await p.chromium.launch(
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 900},
+        )
+        # Hide the webdriver flag that sites use to detect automation
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
+        page = await context.new_page()
 
-    # The JSON response looks like: { "Savings": [ {...}, {...}, ... ] }
-    savings = resp.json().get("Savings", [])
+        # Capture every response from the weekly ad savings API.
+        # The browser automatically sends a `publixstore` header with the store number,
+        # which is what unlocks the full weekly ad data (vs. just digital coupons).
+        async def handle_response(response):
+            if "api/v4/savings" in response.url and "WeeklyAd" in response.url:
+                try:
+                    data = await response.json()
+                    batch = data.get("Savings", [])
+                    if batch:
+                        all_savings.extend(batch)
+                        print(f"  Captured {len(batch)} items (total so far: {len(all_savings)})")
+                except Exception:
+                    pass
 
-    # Filter the full list down to only the true BOGO deals
-    bogo_items = [s for s in savings if is_bogo(s)]
+        page.on("response", handle_response)
 
-    if not bogo_items:
-        print("No BOGO items found — the page may have changed.")
+        print(f"Loading {BOGO_URL} ...")
+        try:
+            await page.goto(BOGO_URL, wait_until="domcontentloaded", timeout=90000)
+        except Exception:
+            pass  # continue even if the load event times out
+
+        # Dismiss Club Publix popup if it appears
+        await asyncio.sleep(2)
+        try:
+            close_btn = page.locator("button[aria-label='Close']").first
+            if await close_btn.is_visible(timeout=3000):
+                await close_btn.click()
+        except Exception:
+            pass
+
+        # Scroll slowly so the page triggers lazy-loaded API calls for each batch
+        print("Scrolling to load all items...")
+        for _ in range(30):
+            await page.evaluate("window.scrollBy(0, window.innerHeight)")
+            await asyncio.sleep(0.8)
+
+        await asyncio.sleep(3)
+        await browser.close()
+
+    if not all_savings:
+        print("No data captured — the site may be down or the page structure changed.")
         return
 
-    print(f"\nFound {len(bogo_items)} BOGO deal(s) (of {len(savings)} total savings):\n")
+    # Filter down to true BOGO deals
+    bogo_items = [s for s in all_savings if is_bogo(s)]
 
-    # Print a fixed-width table; the numbers in :<4 and :<20 set column widths
+    # De-duplicate by title in case multiple scroll events returned the same item
+    seen = set()
+    unique_bogo = []
+    for item in bogo_items:
+        key = item.get("title", "")
+        if key not in seen:
+            seen.add(key)
+            unique_bogo.append(item)
+
+    print(f"\nFound {len(unique_bogo)} BOGO deal(s) (from {len(all_savings)} total weekly ad items):\n")
     print(f"{'#':<4} {'Deal':<20} {'Item'}")
     print("-" * 90)
 
-    for i, item in enumerate(bogo_items, 1):
-        deal = clean(item.get("savings", ""))   # short label, e.g. "Buy 1 Get 1 Free"
-        title = clean(item.get("title", "Unknown"))  # item name
+    for i, item in enumerate(unique_bogo, 1):
+        deal = clean(item.get("savings", ""))
+        title = clean(item.get("title", "Unknown"))
         print(f"{i:<4} {deal:<20} {title}")
 
 
-# Only run main() when this file is executed directly (not when imported as a module)
 if __name__ == "__main__":
-    main()
+    asyncio.run(fetch_bogo_items())
