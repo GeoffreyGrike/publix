@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from pyanylist import AnyListClient
 
-load_dotenv()  # loads ANYLIST_EMAIL, ANYLIST_PASSWORD, ANYLIST_LIST_NAME from .env
+load_dotenv(Path(__file__).parent / ".env")  # loads ANYLIST_EMAIL, ANYLIST_PASSWORD, ANYLIST_LIST_NAME from .env
 
 BOGO_URL = "https://www.publix.com/savings/weekly-ad/bogo"
 
@@ -213,9 +213,9 @@ async def sync_favorites_to_anylist(items: list, previous_items: set):
     print(f"\nSyncing {len(to_add)} new favorite(s) to AnyList list '{list_name}'...")
     try:
         client = AnyListClient.login(email, password)
-        grocery_list = client.get_list_by_name(list_name)
-
-        if grocery_list is None:
+        try:
+            grocery_list = client.get_list_by_name(list_name)
+        except Exception:
             grocery_list = client.create_list(list_name)
             print(f"  Created new AnyList list: '{list_name}'")
 
