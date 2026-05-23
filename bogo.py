@@ -17,17 +17,10 @@ BOGO_URL = "https://www.publix.com/savings/weekly-ad/bogo"
 # The WeeklyAd endpoint mixes all deal types together, so we filter here.
 BOGO_KEYWORDS = ("buy 1 get 1", "buy one get one", "bogo", "get one free", "get 1 free", "buy 2 get 1")
 
-# Items to mark as favorites — matched case-insensitively against the item title
-FAVORITES = (
-    "Fresh Express Salad Blends",
-    "Tomato Medley",
-    "Sabra Hummus",
-    "Cabot Cheese Bar",
-    "Nutty & Fruity Mango",
-    "Calbee Harvest Snaps Snacks",
-    "Pretzilla Soft Pretzel Bites",
-    "12-Pack Landshark Island Style Lager",
-    "6-Pack Shock Top",
+_favorites_file = Path(__file__).parent / "favorites.txt"
+FAVORITES = tuple(
+    line.strip() for line in _favorites_file.read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.startswith("#")
 )
 
 
