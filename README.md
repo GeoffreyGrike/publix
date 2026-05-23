@@ -86,18 +86,18 @@ python3 bogo.py
 
 ## Favorites
 
-To mark items as favorites (they appear at the top of the list with a ★), edit the `FAVORITES` list near the top of `bogo.py`:
+To mark items as favorites (they appear at the top of the list with a ★), edit `favorites.txt` — one item per line:
 
-```python
-FAVORITES = (
-    "Fresh Express Salad Blends",
-    "Tomato Medley",
-    "Sabra Hummus",
-    # add more items here...
-)
+```text
+Fresh Express Salad Blends
+Tomato Medley
+Sabra Hummus
+# add more items here...
 ```
 
-Matching is case-insensitive and partial — `"Shock Top"` will match `"6-Pack Shock Top Beer"`.
+Lines starting with `#` are treated as comments and ignored. Matching is case-insensitive and partial — `"Shock Top"` will match `"6-Pack Shock Top Beer"`.
+
+Changes to `favorites.txt` take effect immediately on the next run — no script edits needed.
 
 ---
 
