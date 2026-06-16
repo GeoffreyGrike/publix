@@ -123,16 +123,7 @@ async def fetch_bogo_items():
             seen.add(key)
             unique_bogo.append(item)
 
-    # Load previous run's items to detect what's new this week
     downloads_dir = Path(__file__).parent / "downloads"
-    previous_items = set()
-    previous_files = sorted(downloads_dir.glob("publix_bogo_*.csv"))
-    if previous_files:
-        with open(previous_files[-1], newline="", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                previous_items.add(row.get("Item", "").strip())
-        print(f"Comparing against previous run: {previous_files[-1].name}")
 
     # Sort: favorites first, then alphabetically by department
     unique_bogo.sort(key=lambda x: (
@@ -141,8 +132,8 @@ async def fetch_bogo_items():
     ))
 
     print(f"\nFound {len(unique_bogo)} BOGO deal(s) (from {len(all_savings)} total weekly ad items):\n")
-    print(f"{'Item':<45} {'Department':<25} {'Fav':<5} {'New':<5} {'Save Up To':<12} {'Valid'}")
-    print("-" * 115)
+    print(f"{'Item':<45} {'Department':<25} {'Fav':<5} {'Save Up To':<12} {'Valid'}")
+    print("-" * 109)
 
     for item in unique_bogo:
         title = clean(item.get("title", "Unknown"))
@@ -150,9 +141,7 @@ async def fetch_bogo_items():
         valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
         fav = "★" if is_favorite(title) else ""
         department = clean(item.get("department", ""))
-        # Mark as new if no previous file existed or item wasn't in previous run
-        new = "🆕" if previous_items and title not in previous_items else ""
-        print(f"{title:<45} {department:<25} {fav:<5} {new:<5} {save_up_to:<12} {valid}")
+        print(f"{title:<45} {department:<25} {fav:<5} {save_up_to:<12} {valid}")
 
     # Save results to a CSV in the repo's downloads folder
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -160,28 +149,22 @@ async def fetch_bogo_items():
     with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         # QUOTE_ALL ensures every field is quoted, so spreadsheet apps parse columns correctly
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-        writer.writerow(["Item", "Department", "Favorite", "New", "Save Up To", "Valid"])
+        writer.writerow(["Item", "Department", "Favorite", "Save Up To", "Valid"])
         for item in unique_bogo:
             title = clean(item.get("title", "Unknown"))
             save_up_to = clean(item.get("additionalDealInfo", "")).replace("SAVE UP TO ", "").replace("Save Up To ", "")
             valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
             department = clean(item.get("department", ""))
-            new = "Yes" if previous_items and title not in previous_items else ""
-            writer.writerow([title, department, "Yes" if is_favorite(title) else "", new, save_up_to, valid])
+            writer.writerow([title, department, "Yes" if is_favorite(title) else "", save_up_to, valid])
 
     print(f"\nSaved to {output_path}")
 
-    # Add new favorite BOGO items to AnyList automatically
-    await sync_favorites_to_anylist(unique_bogo, previous_items)
+    # Add favorite BOGO items to AnyList
+    await sync_favorites_to_anylist(unique_bogo)
 
 
-async def sync_favorites_to_anylist(items: list, previous_items: set):
-    """Add new favorite BOGO items to AnyList.
-
-    Only adds items that are both a favorite AND new this week (not in the
-    previous run), so the list isn't flooded with duplicates on every run.
-    On the very first run (no previous file), all current favorites are added.
-    """
+async def sync_favorites_to_anylist(items: list):
+    """Add all favorite BOGO items to AnyList."""
     email = os.getenv("ANYLIST_EMAIL")
     password = os.getenv("ANYLIST_PASSWORD")
     list_name = os.getenv("ANYLIST_LIST_NAME", "Groceries")
@@ -191,18 +174,13 @@ async def sync_favorites_to_anylist(items: list, previous_items: set):
         print("Add ANYLIST_EMAIL and ANYLIST_PASSWORD to .env to enable.")
         return
 
-    # Collect favorites that are new this week, keeping the full item dict for details
-    to_add = [
-        item for item in items
-        if is_favorite(clean(item.get("title", "")))
-        and (not previous_items or clean(item.get("title", "")) not in previous_items)
-    ]
+    to_add = [item for item in items if is_favorite(clean(item.get("title", "")))]
 
     if not to_add:
-        print("\nNo new favorite BOGO items to add to AnyList.")
+        print("\nNo favorite BOGO items to add to AnyList.")
         return
 
-    print(f"\nSyncing {len(to_add)} new favorite(s) to AnyList list '{list_name}'...")
+    print(f"\nSyncing {len(to_add)} favorite(s) to AnyList list '{list_name}'...")
     try:
         client = AnyListClient.login(email, password)
         try:
@@ -222,7 +200,7 @@ async def sync_favorites_to_anylist(items: list, previous_items: set):
             note = f"BOGO – {save_up_to} | Valid {valid}"
 
             if title.lower() in existing:
-                print(f"  Skipped (already on list): {title}")
+                print(f"  Already on list: {title}")
             else:
                 client.add_item_with_details(grocery_list.id, title, details=note)
                 print(f"  Added: {title} ({note})")
