@@ -195,10 +195,8 @@ async def sync_favorites_to_anylist(items: list):
 
         for item in to_add:
             title = clean(item.get("title", ""))
-            save_up_to = clean(item.get("additionalDealInfo", "")).replace("SAVE UP TO ", "").replace("Save Up To ", "")
-            valid = f"{item.get('wa_startDateFormatted', '')} - {item.get('wa_endDateFormatted', '')}"
             # Note added to the item so it's clearly identifiable as a BOGO in the grocery list
-            note = f"BOGO – {save_up_to} | Valid {valid}"
+            note = "BOGO"
 
             existing_item = existing.get(title.lower())
             if existing_item is None:
@@ -207,9 +205,7 @@ async def sync_favorites_to_anylist(items: list):
             elif existing_item.is_checked:
                 # Un-check rather than delete+re-add: pyanylist can't read or
                 # write item photos, and delete+re-add would silently lose any
-                # photo the user manually attached. The tradeoff is that the
-                # note (price/dates) is left stale from whenever the item was
-                # first added, since pyanylist has no "update details" call.
+                # photo the user manually attached.
                 client.uncheck_item(grocery_list.id, existing_item.id)
                 print(f"  Un-checked (was crossed off): {title}")
             else:
