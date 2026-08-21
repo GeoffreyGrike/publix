@@ -189,8 +189,9 @@ async def sync_favorites_to_anylist(items: list):
             grocery_list = client.create_list(list_name)
             print(f"  Created new AnyList list: '{list_name}'")
 
-        # Get names already on the list to avoid duplicates
-        existing = {i.name.lower() for i in grocery_list.items}
+        # Map names already on the list to their item, to avoid duplicates and
+        # to detect items that were bought and crossed off.
+        existing = {i.name.lower(): i for i in grocery_list.items}
 
         for item in to_add:
             title = clean(item.get("title", ""))
@@ -199,11 +200,15 @@ async def sync_favorites_to_anylist(items: list):
             # Note added to the item so it's clearly identifiable as a BOGO in the grocery list
             note = f"BOGO – {save_up_to} | Valid {valid}"
 
-            if title.lower() in existing:
-                print(f"  Already on list: {title}")
-            else:
+            existing_item = existing.get(title.lower())
+            if existing_item is None:
                 client.add_item_with_details(grocery_list.id, title, details=note)
                 print(f"  Added: {title} ({note})")
+            elif existing_item.is_checked:
+                client.uncheck_item(grocery_list.id, existing_item.id)
+                print(f"  Un-checked (was crossed off): {title}")
+            else:
+                print(f"  Already on list: {title}")
 
     except Exception as e:
         print(f"  AnyList sync failed: {e}")
