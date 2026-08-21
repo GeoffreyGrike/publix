@@ -205,8 +205,11 @@ async def sync_favorites_to_anylist(items: list):
                 client.add_item_with_details(grocery_list.id, title, details=note)
                 print(f"  Added: {title} ({note})")
             elif existing_item.is_checked:
-                client.uncheck_item(grocery_list.id, existing_item.id)
-                print(f"  Un-checked (was crossed off): {title}")
+                # pyanylist has no "update details" call, so delete and re-add
+                # to bring back an active item with this week's fresh note.
+                client.delete_item(grocery_list.id, existing_item.id)
+                client.add_item_with_details(grocery_list.id, title, details=note)
+                print(f"  Re-added (was crossed off): {title} ({note})")
             else:
                 print(f"  Already on list: {title}")
 
