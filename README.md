@@ -1,6 +1,6 @@
 # Publix BOGO Scraper
 
-Fetches the current week's Buy One Get One (BOGO) deals from the Publix weekly ad, saves them to a CSV file, and automatically adds new favorite items to an AnyList grocery list.
+Fetches the current week's Buy One Get One (BOGO) deals from the Publix weekly ad, saves them to a CSV file, and syncs your favorite items to an AnyList grocery list.
 
 ---
 
@@ -13,10 +13,9 @@ Each time the script runs it:
 3. Captures the API response that the page fetches in the background — this includes all 730+ weekly ad items for the configured store
 4. Filters that list down to true BOGO deals (Buy 1 Get 1 Free, Buy 2 Get 1 Free, etc.)
 5. Removes duplicates and sorts results — favorites first (alphabetically by department), then the rest (alphabetically by department)
-6. Compares results against the most recent previous CSV to identify new items
-7. Automatically adds any new favorite items to an AnyList grocery list with a BOGO note
-8. Prints the results to the terminal
-9. Saves a timestamped CSV file to the `downloads/` folder
+6. Prints the results to the terminal
+7. Saves a timestamped CSV file to the `downloads/` folder
+8. Syncs every current favorite BOGO item to an AnyList grocery list (see [AnyList Integration](#anylist-integration))
 
 ---
 
@@ -46,7 +45,6 @@ Saved to `downloads/publix_bogo_YYYY-MM-DD_HH-MM-SS.csv` with columns:
 | Item | Product name |
 | Department | Store section (e.g. Produce, Meat, Deli) |
 | Favorite | "Yes" if the item is in your favorites list |
-| New | "Yes" if the item was not present in the previous run's CSV |
 | Save Up To | Maximum savings amount |
 | Valid | Deal date range (e.g. 5/21 - 5/27) |
 
@@ -103,12 +101,17 @@ Changes to `favorites.txt` take effect immediately on the next run — no script
 
 ## AnyList Integration
 
-When a new favorite BOGO item appears (i.e. it wasn't in the previous run's CSV), the script automatically adds it to your AnyList grocery list. Each item includes a note with the savings amount and valid dates so it's easy to identify as a BOGO deal:
+Every run, the script syncs **all current favorite BOGO items** (not just newly-appeared ones) to your AnyList grocery list. For each favorite item still on BOGO this week, one of three things happens:
 
-```
-Fresh Express Salad Blends
-BOGO – $5.65 | Valid 5/21 - 5/27
-```
+| State on AnyList | Action |
+|---|---|
+| Not on the list | Added, with a note of `BOGO` so it's easy to spot |
+| On the list, active | Left alone |
+| On the list, crossed off | Un-checked, so it shows back up as active |
+
+The un-check behavior handles the common case where you buy something, cross it off in AnyList, and it's still on BOGO the following week(s) — the item comes back automatically instead of staying stuck as crossed-off, or getting duplicated if you'd deleted it.
+
+Note: the AnyList library this script uses (`pyanylist`) can't read or write item photos, and can't update an existing item's note in place. So un-checking an item preserves any photo/category you attached to it, but its note stays exactly as it was set when first added — which is why the note is just the static text `BOGO` rather than that week's price/dates (those would go stale the first time an item got revived from crossed-off).
 
 ### Setup
 
@@ -131,13 +134,15 @@ If credentials are not set, the script skips the AnyList sync and prints a remin
 
 ## Schedule
 
-The script runs automatically every day at **9:00 AM ET** via a cron job installed on this machine:
+Publix's weekly ad refreshes on Thursdays, so the script runs automatically every **Thursday at 7:00 AM** via a cron job installed on this machine:
 
 ```
-0 9 * * * cd /path/to/publix && .venv/bin/python3 bogo.py >> downloads/bogo.log 2>&1
+0 7 * * 4 /home/pi/publix/run_bogo.sh >> /home/pi/publix/downloads/bogo.log 2>&1
 ```
 
-Each run compares its results against the most recent CSV in `downloads/`. Any item that wasn't in the previous run is marked **New = Yes**, making it easy to spot deals that just started. Logs from each run are appended to `downloads/bogo.log`.
+Cron runs jobs with a minimal shell that doesn't load `.bashrc`/`.profile`, so `run_bogo.sh` explicitly sets `HOME`, `PATH`, and the repo path before invoking `bogo.py` with the venv's Python. Logs from each run are appended to `downloads/bogo.log`.
+
+You can also run `./run_bogo.sh` manually any time — e.g. to pick up favorites you crossed off or deleted in AnyList — since every run re-syncs the full current favorites list, not just newly-appeared items.
 
 To view or edit the cron schedule:
 
