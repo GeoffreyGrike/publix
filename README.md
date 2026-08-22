@@ -1,5 +1,7 @@
 # Publix BOGO Scraper
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) [![Changelog](https://img.shields.io/badge/changelog-commits-lightgrey.svg)](https://github.com/GeoffreyGrike/publix/commits/main)
+
 Fetches the current week's Buy One Get One (BOGO) deals from the Publix weekly ad, saves them to a CSV file, and syncs your favorite items to an AnyList grocery list.
 
 ---
