@@ -142,7 +142,7 @@ Publix's weekly ad refreshes on Thursdays, so the script runs automatically ever
 0 7 * * 4 /home/pi/publix/run_bogo.sh >> /home/pi/publix/downloads/bogo.log 2>&1
 ```
 
-Cron runs jobs with a minimal shell that doesn't load `.bashrc`/`.profile`, so `run_bogo.sh` explicitly sets `HOME`, `PATH`, and the repo path before invoking `bogo.py` with the venv's Python. Logs from each run are appended to `downloads/bogo.log`.
+Cron runs jobs with a minimal shell that doesn't load `.bashrc`/`.profile`, so `run_bogo.sh` explicitly sets `HOME`, `PATH`, and the repo path before invoking `bogo.py` with the venv's Python. Before running `bogo.py`, it does a `git pull --ff-only` so any changes pushed to GitHub (e.g. edits to `favorites.txt`) are picked up first; if the pull can't fast-forward (no network, local changes, etc.) it logs a warning and runs with whatever is already on disk instead of failing. Logs from each run are appended to `downloads/bogo.log`.
 
 You can also run `./run_bogo.sh` manually any time — e.g. to pick up favorites you crossed off or deleted in AnyList — since every run re-syncs the full current favorites list, not just newly-appeared items.
 
